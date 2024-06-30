@@ -16,6 +16,8 @@ struct World {
     length: u16,
     height: u16,
     next_stone_distance: u16,
+    next_top_grain_distance: u16,
+    next_bottom_grain_distance: u16,
     rng: ThreadRng,
     main_line: Vec<LineStatus>,
     top_ground: Vec<bool>,
@@ -42,6 +44,8 @@ fn main() {
         // TODO: the range's maximum should be equal to terminal width if
         // the width is larger than 2000
         world.next_stone_distance = world.rng.gen_range(30..70);
+        world.next_top_grain_distance = world.rng.gen_range(10..20);
+        world.next_bottom_grain_distance = world.rng.gen_range(10..20);
         for _ in 0..world.length {
             next_frame(world);
         }
@@ -50,7 +54,8 @@ fn main() {
     fn draw(world: &World) {
         let mut stdout = stdout();
         stdout.queue(Clear(ClearType::All));
-        stdout.queue(cursor::MoveTo(0, world.height - 4));
+        // draw main line
+        stdout.queue(cursor::MoveTo(0, world.height - 3));
         for line_status in &world.main_line {
             match line_status {
                 LineStatus::StoneStart => stdout.queue(Print("/")),
@@ -59,6 +64,26 @@ fn main() {
                 LineStatus::Line => stdout.queue(Print("_")),
             };
         }
+        // draw top ground
+        stdout.queue(cursor::MoveTo(0, world.height - 2));
+        for is_grain in &world.top_ground {
+            if *is_grain {
+                stdout.queue(Print("."));
+            } else {
+                stdout.queue(cursor::MoveRight(1));
+            }
+        }
+
+        // draw bottom ground
+        stdout.queue(cursor::MoveTo(0, world.height - 1));
+        for is_grain in &world.bottom_ground {
+            if *is_grain {
+                stdout.queue(Print("."));
+            } else {
+                stdout.queue(cursor::MoveRight(1));
+            }
+        }
+
         stdout.flush();
     }
 
@@ -75,10 +100,29 @@ fn main() {
             _ => world.main_line.push(LineStatus::Line),
         }
         world.next_stone_distance -= 1;
+        // generate top ground
+        if world.next_top_grain_distance == 0 {
+            world.top_ground.push(true);
+            world.next_top_grain_distance = world.rng.gen_range(10..20);
+        } else {
+            world.top_ground.push(false);
+        }
+        world.next_top_grain_distance -= 1;
+        
+        // generate bottom ground
+        if world.next_bottom_grain_distance == 0 {
+            world.bottom_ground.push(true);
+            world.next_bottom_grain_distance = world.rng.gen_range(10..20);
+        } else {
+            world.bottom_ground.push(false);
+        }
+        world.next_bottom_grain_distance -= 1;
     }
     
     fn delete_first_frame(world: &mut World) {
         world.main_line.remove(0);
+        world.top_ground.remove(0);
+        world.bottom_ground.remove(0);
     }
 
     initiate_world(&mut world);
