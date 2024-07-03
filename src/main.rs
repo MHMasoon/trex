@@ -1,17 +1,23 @@
 use crossterm::terminal::size;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
+use crossterm::terminal::enable_raw_mode;
 use crossterm::style::Print;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use std::io::stdout;
+use std::io::Stdout;
 use std::io::Write;
 use std::thread::sleep;
 use std::time::Duration;
 use crossterm::QueueableCommand;
 use crossterm::cursor;
+use crossterm::event::poll;
+use crossterm::event::Event;
+use crossterm::event::read;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyModifiers;
 
-#[derive(Default)]
 struct World {
     length: u16,
     height: u16,
@@ -22,6 +28,24 @@ struct World {
     main_line: Vec<LineStatus>,
     top_ground: Vec<bool>,
     bottom_ground: Vec<bool>,
+    trex: [(u16, u16); 7],
+    trex_status: TrexStatus,
+    game_status: GameStatus,
+    stdout: Stdout,
+}
+
+enum GameStatus {
+    Paused,
+    Running,
+    Over,
+    Closed,
+}
+
+enum TrexStatus {
+    OnGround,
+    OnTop,
+    Rising,
+    Falling,
 }
 
 enum LineStatus {
@@ -32,12 +56,24 @@ enum LineStatus {
 }
 
 fn main() {
+    // change terminal settings
+    enable_raw_mode();
+
     // create world
     let mut world = World {
         length: size().unwrap().0,
         height: size().unwrap().1,
         rng: rand::thread_rng(),
-        ..Default::default()
+        stdout: stdout(),
+        next_stone_distance: 0,
+        next_top_grain_distance: 0,
+        next_bottom_grain_distance: 0,
+        main_line: Vec::new(),
+        top_ground: Vec::new(),
+        bottom_ground: Vec::new(),
+        trex: [(0, 0); 7],
+        trex_status: TrexStatus::OnGround,
+        game_status: GameStatus::Paused,
     };
     
     fn initiate_world(world: &mut World) {
@@ -49,42 +85,100 @@ fn main() {
         for _ in 0..world.length {
             next_frame(world);
         }
+
+        // initiate trex
+        let trex_x_origin: u16 = 2;
+        let trex_y_origin: u16 = world.height - 3;
+        world.trex = [
+            (trex_x_origin + 2, trex_y_origin - 0),
+            (trex_x_origin + 0, trex_y_origin - 0),
+            (trex_x_origin + 0, trex_y_origin - 1),
+            (trex_x_origin + 1, trex_y_origin - 1),
+            (trex_x_origin + 2, trex_y_origin - 1),
+            (trex_x_origin + 2, trex_y_origin - 2),
+            (trex_x_origin + 3, trex_y_origin - 2),
+        ];
     }
+
+    // check events
+    fn check_events(world: &mut World) {
+        for _ in 0..5 {
+            // `poll()` waits for an `Event` for a given time period
+            if poll(Duration::from_millis(0)).unwrap() {
+                // It's guaranteed that the `read()` won't block when the `poll()`
+                // function returns `true`
+                match read().unwrap() {
+                    Event::FocusGained => println!("FocusGained"),
+                    Event::FocusLost => println!("FocusLost"),
+                    Event::Key(event) => {
+                        match (event.code, event.modifiers) {
+                            (KeyCode::Char('p'), KeyModifiers::NONE) => {
+                                match world.game_status {
+                                    GameStatus::Paused => world.game_status = GameStatus::Running,
+                                    GameStatus::Running => world.game_status = GameStatus::Paused,
+                                    _ => {},
+                                }
+                            },
+                            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                                world.game_status = GameStatus::Closed;
+                            }
+                            _ => {},
+                        }
+                    },
+                    Event::Mouse(event) => println!("{:?}", event),
+                    #[cfg(feature = "bracketed-paste")]
+                    Event::Paste(data) => println!("Pasted {:?}", data),
+                    Event::Resize(width, height) => println!("New size {}x{}", width, height),
+                    _ => println!("Uncovered Event!"),
+                }
+            } else {
+                // Timeout expired and no `Event` is available
+            }
+        }
+    }
+
     // draw world
-    fn draw(world: &World) {
-        let mut stdout = stdout();
-        stdout.queue(Clear(ClearType::All));
+    fn draw(world: &mut World) {
+        world.stdout.queue(cursor::Hide);
+        world.stdout.queue(Clear(ClearType::All));
+        world.stdout.queue(Clear(ClearType::Purge));
         // draw main line
-        stdout.queue(cursor::MoveTo(0, world.height - 3));
+        world.stdout.queue(cursor::MoveTo(0, world.height - 3));
         for line_status in &world.main_line {
             match line_status {
-                LineStatus::StoneStart => stdout.queue(Print("/")),
-                LineStatus::StoneMiddle => stdout.queue(Print("-")),
-                LineStatus::StoneEnd => stdout.queue(Print("\\")),
-                LineStatus::Line => stdout.queue(Print("_")),
+                LineStatus::StoneStart => world.stdout.queue(Print("/")),
+                LineStatus::StoneMiddle => world.stdout.queue(Print("-")),
+                LineStatus::StoneEnd => world.stdout.queue(Print("\\")),
+                LineStatus::Line => world.stdout.queue(Print("_")),
             };
         }
         // draw top ground
-        stdout.queue(cursor::MoveTo(0, world.height - 2));
+        world.stdout.queue(cursor::MoveTo(0, world.height - 2));
         for is_grain in &world.top_ground {
             if *is_grain {
-                stdout.queue(Print("."));
+                world.stdout.queue(Print("."));
             } else {
-                stdout.queue(cursor::MoveRight(1));
+                world.stdout.queue(cursor::MoveRight(1));
             }
         }
 
         // draw bottom ground
-        stdout.queue(cursor::MoveTo(0, world.height - 1));
+        world.stdout.queue(cursor::MoveTo(0, world.height - 1));
         for is_grain in &world.bottom_ground {
             if *is_grain {
-                stdout.queue(Print("."));
+                world.stdout.queue(Print("."));
             } else {
-                stdout.queue(cursor::MoveRight(1));
+                world.stdout.queue(cursor::MoveRight(1));
             }
         }
 
-        stdout.flush();
+        // draw trex
+        for trex_pixel in world.trex.iter() {
+            world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1));
+            world.stdout.queue(Print("█"));
+        }
+
+        world.stdout.flush();
     }
 
     // create next frame
@@ -125,12 +219,23 @@ fn main() {
         world.bottom_ground.remove(0);
     }
 
-    initiate_world(&mut world);
-    draw(&world);
-    for i in 1..10000 {
-        next_frame(&mut world);
-        delete_first_frame(&mut world);
-        draw(&world);
-        sleep(Duration::from_millis(50));
+    fn control_flow(world: &mut World) {
+        initiate_world(world);
+        draw(world);
+        loop {
+            check_events(world);
+
+            match world.game_status {
+                GameStatus::Paused => continue,
+                GameStatus::Closed => return,
+                _ => {},
+            }
+            next_frame(world);
+            delete_first_frame(world);
+            draw(world);
+            sleep(Duration::from_millis(50));
+        }
     }
+
+    control_flow(&mut world);
 }
