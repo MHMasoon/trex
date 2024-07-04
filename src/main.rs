@@ -28,8 +28,10 @@ struct World {
     main_line: Vec<LineStatus>,
     top_ground: Vec<bool>,
     bottom_ground: Vec<bool>,
-    trex: [(u16, u16); 7],
+    trex_pixels: [(u16, u16); 7],
     trex_status: TrexStatus,
+    trex_height: u16,
+    trex_max_height: u16,
     game_status: GameStatus,
     stdout: Stdout,
 }
@@ -41,9 +43,9 @@ enum GameStatus {
     Closed,
 }
 
+#[derive(PartialEq)]
 enum TrexStatus {
     OnGround,
-    OnTop,
     Rising,
     Falling,
 }
@@ -53,6 +55,12 @@ enum LineStatus {
     StoneStart,
     StoneMiddle,
     StoneEnd,
+}
+
+#[derive(PartialEq)]
+enum TrexMoveDirection {
+    Up,
+    Down,
 }
 
 fn main() {
@@ -71,7 +79,9 @@ fn main() {
         main_line: Vec::new(),
         top_ground: Vec::new(),
         bottom_ground: Vec::new(),
-        trex: [(0, 0); 7],
+        trex_pixels: [(0, 0); 7],
+        trex_height: 0,
+        trex_max_height: 10,
         trex_status: TrexStatus::OnGround,
         game_status: GameStatus::Paused,
     };
@@ -86,10 +96,10 @@ fn main() {
             next_frame(world);
         }
 
-        // initiate trex
+        // initiate trex pixels
         let trex_x_origin: u16 = 2;
         let trex_y_origin: u16 = world.height - 3;
-        world.trex = [
+        world.trex_pixels = [
             (trex_x_origin + 2, trex_y_origin - 0),
             (trex_x_origin + 0, trex_y_origin - 0),
             (trex_x_origin + 0, trex_y_origin - 1),
@@ -117,6 +127,11 @@ fn main() {
                                     GameStatus::Paused => world.game_status = GameStatus::Running,
                                     GameStatus::Running => world.game_status = GameStatus::Paused,
                                     _ => {},
+                                }
+                            },
+                            (KeyCode::Char(' '), KeyModifiers::NONE) => {
+                                if world.trex_status == TrexStatus::OnGround {
+                                    world.trex_status = TrexStatus::Rising;
                                 }
                             },
                             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
@@ -173,7 +188,7 @@ fn main() {
         }
 
         // draw trex
-        for trex_pixel in world.trex.iter() {
+        for trex_pixel in world.trex_pixels.iter() {
             world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1));
             world.stdout.queue(Print("█"));
         }
@@ -194,6 +209,7 @@ fn main() {
             _ => world.main_line.push(LineStatus::Line),
         }
         world.next_stone_distance -= 1;
+
         // generate top ground
         if world.next_top_grain_distance == 0 {
             world.top_ground.push(true);
@@ -211,8 +227,47 @@ fn main() {
             world.bottom_ground.push(false);
         }
         world.next_bottom_grain_distance -= 1;
+
+        // move trex
+        match world.trex_status {
+            TrexStatus::Rising => {
+                if world.trex_height < world.trex_max_height {
+                    move_trex(world, TrexMoveDirection::Up);
+                } else {
+                    world.trex_status = TrexStatus::Falling;
+                }
+            },
+            TrexStatus::Falling => {
+                if world.trex_height > 0 {
+                    move_trex(world, TrexMoveDirection::Down);
+                } else {
+                    world.trex_status = TrexStatus::OnGround;
+                }
+            },
+            _ => {
+            }
+        }
     }
     
+    fn move_trex(world: &mut World, direction : TrexMoveDirection) {
+        if direction  == TrexMoveDirection::Up {
+            world.trex_height += 1;
+        } else {
+            world.trex_height -= 1;
+        }
+
+        for pixel in world.trex_pixels.iter_mut() {
+            match direction {
+                TrexMoveDirection::Up => {
+                    pixel.1 -= 1;
+                },
+                TrexMoveDirection::Down => {
+                    pixel.1 += 1;
+                },
+            }
+        }
+    }
+
     fn delete_first_frame(world: &mut World) {
         world.main_line.remove(0);
         world.top_ground.remove(0);
