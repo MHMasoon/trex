@@ -93,8 +93,8 @@ fn main() {
     fn initiate_world(world: &mut World) {
         // TODO: the range's maximum should be equal to terminal width if
         // the width is larger than 2000
-        world.next_top_stone_distance = world.rng.gen_range(30..70);
-        world.next_bottom_stone_distance = world.rng.gen_range(30..70);
+        world.next_top_stone_distance = world.rng.gen_range(50..100);
+        world.next_bottom_stone_distance = world.rng.gen_range(50..100);
         world.next_grain_distance = world.rng.gen_range(10..20);
         world.next_cactus_distance = world.rng.gen_range(100..200);
         for _ in 0..world.length {
@@ -195,6 +195,12 @@ fn main() {
             }
         }
 
+        // draw cactuses
+        for pixel in world.cactuses_pixels.iter() {
+            world.stdout.queue(cursor::MoveTo(pixel.0, pixel.1));
+            world.stdout.queue(Print("█"));
+        }
+
         // draw trex
         for trex_pixel in world.trex_pixels.iter() {
             world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1));
@@ -212,7 +218,7 @@ fn main() {
             1 => world.top_line.push(LineStatus::StoneMiddle),
             0 => {
                 world.top_line.push(LineStatus::StoneEnd);
-                world.next_top_stone_distance = world.rng.gen_range(30..70);
+                world.next_top_stone_distance = world.rng.gen_range(50..100);
             },
             _ => world.top_line.push(LineStatus::Line),
         }
@@ -224,7 +230,7 @@ fn main() {
             1 => world.bottom_line.push(LineStatus::StoneMiddle),
             0 => {
                 world.bottom_line.push(LineStatus::StoneEnd);
-                world.next_bottom_stone_distance = world.rng.gen_range(30..70);
+                world.next_bottom_stone_distance = world.rng.gen_range(50..100);
             },
             _ => world.bottom_line.push(LineStatus::Line),
         }
@@ -239,16 +245,59 @@ fn main() {
         }
         world.next_grain_distance -= 1;
         
+        // move cactuses
+        for pixel in world.cactuses_pixels.iter_mut() {
+            pixel.0 -= 1;
+        }
+
         // generate cactus
         if world.next_cactus_distance == 0 {
-            let cactus_form = world.rng.gen_range(1..=3);
+            let cactus_form: u8 = world.rng.gen_range(1..=3);
+            let mut cactus_pixels: Vec<(u16, u16)> = Vec::new();
             match cactus_form {
                 1 => {
-
+                    cactus_pixels = vec![
+                        (world.length + 1, world.height - 2),
+                        (world.length + 1, world.height - 3),
+                        (world.length + 1, world.height - 4),
+                        (world.length + 1, world.height - 5),
+                        (world.length + 2, world.height - 3),
+                        (world.length + 3, world.height - 3),
+                        (world.length + 3, world.height - 4),
+                    ];
                 },
-                _ => {},
+                2 => {
+                    cactus_pixels = vec![
+                        (world.length + 4, world.height - 2),
+                        (world.length + 4, world.height - 3),
+                        (world.length + 4, world.height - 4),
+                        (world.length + 4, world.height - 5),
+                        (world.length + 3, world.height - 3),
+                        (world.length + 2, world.height - 3),
+                        (world.length + 2, world.height - 4),
+                    ];
+                },
+                3 => {
+                    cactus_pixels = vec![
+                        (world.length + 4, world.height - 2),
+                        (world.length + 4, world.height - 3),
+                        (world.length + 4, world.height - 4),
+                        (world.length + 4, world.height - 5),
+                        (world.length + 3, world.height - 3),
+                        (world.length + 2, world.height - 3),
+                        (world.length + 2, world.height - 4),
+                        (world.length + 5, world.height - 3),
+                        (world.length + 6, world.height - 3),
+                        (world.length + 6, world.height - 4),
+                    ];
+                },
+                _ => (),
             }
+            world.cactuses_pixels.extend(cactus_pixels);
+            
+            world.next_cactus_distance = world.rng.gen_range(100..200);
         }
+        world.next_cactus_distance -= 1;
 
         // move trex
         match world.trex_status {
@@ -294,6 +343,9 @@ fn main() {
         world.top_line.remove(0);
         world.bottom_line.remove(0);
         world.ground.remove(0);
+
+        // delete cactus pixels that are out of screen
+        world.cactuses_pixels.retain(|pixel| pixel.0 > 0);
     }
 
     fn control_flow(world: &mut World) {
