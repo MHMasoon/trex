@@ -21,13 +21,15 @@ use crossterm::event::KeyModifiers;
 struct World {
     length: u16,
     height: u16,
-    next_stone_distance: u16,
-    next_top_grain_distance: u16,
-    next_bottom_grain_distance: u16,
+    next_top_stone_distance: u16,
+    next_bottom_stone_distance: u16,
+    next_grain_distance: u16,
+    next_cactus_distance: u8,
     rng: ThreadRng,
-    main_line: Vec<LineStatus>,
-    top_ground: Vec<bool>,
-    bottom_ground: Vec<bool>,
+    top_line: Vec<LineStatus>,
+    bottom_line: Vec<LineStatus>,
+    ground: Vec<bool>,
+    cactuses_pixels: Vec<(u16, u16)>,
     trex_pixels: [(u16, u16); 7],
     trex_status: TrexStatus,
     trex_height: u16,
@@ -73,12 +75,14 @@ fn main() {
         height: size().unwrap().1,
         rng: rand::thread_rng(),
         stdout: stdout(),
-        next_stone_distance: 0,
-        next_top_grain_distance: 0,
-        next_bottom_grain_distance: 0,
-        main_line: Vec::new(),
-        top_ground: Vec::new(),
-        bottom_ground: Vec::new(),
+        next_top_stone_distance: 0,
+        next_bottom_stone_distance: 0,
+        next_grain_distance: 0,
+        next_cactus_distance: 0,
+        top_line: Vec::new(),
+        bottom_line: Vec::new(),
+        ground: Vec::new(),
+        cactuses_pixels: Vec::new(),
         trex_pixels: [(0, 0); 7],
         trex_height: 0,
         trex_max_height: 10,
@@ -89,9 +93,10 @@ fn main() {
     fn initiate_world(world: &mut World) {
         // TODO: the range's maximum should be equal to terminal width if
         // the width is larger than 2000
-        world.next_stone_distance = world.rng.gen_range(30..70);
-        world.next_top_grain_distance = world.rng.gen_range(10..20);
-        world.next_bottom_grain_distance = world.rng.gen_range(10..20);
+        world.next_top_stone_distance = world.rng.gen_range(30..70);
+        world.next_bottom_stone_distance = world.rng.gen_range(30..70);
+        world.next_grain_distance = world.rng.gen_range(10..20);
+        world.next_cactus_distance = world.rng.gen_range(100..200);
         for _ in 0..world.length {
             next_frame(world);
         }
@@ -100,13 +105,13 @@ fn main() {
         let trex_x_origin: u16 = 2;
         let trex_y_origin: u16 = world.height - 3;
         world.trex_pixels = [
-            (trex_x_origin + 2, trex_y_origin - 0),
-            (trex_x_origin + 0, trex_y_origin - 0),
-            (trex_x_origin + 0, trex_y_origin - 1),
-            (trex_x_origin + 1, trex_y_origin - 1),
-            (trex_x_origin + 2, trex_y_origin - 1),
-            (trex_x_origin + 2, trex_y_origin - 2),
-            (trex_x_origin + 3, trex_y_origin - 2),
+            (trex_x_origin + 2, trex_y_origin - 0 + 1),
+            (trex_x_origin + 0, trex_y_origin - 0 + 1),
+            (trex_x_origin + 0, trex_y_origin - 1 + 1),
+            (trex_x_origin + 1, trex_y_origin - 1 + 1),
+            (trex_x_origin + 2, trex_y_origin - 1 + 1),
+            (trex_x_origin + 2, trex_y_origin - 2 + 1),
+            (trex_x_origin + 3, trex_y_origin - 2 + 1),
         ];
     }
 
@@ -157,9 +162,10 @@ fn main() {
         world.stdout.queue(cursor::Hide);
         world.stdout.queue(Clear(ClearType::All));
         world.stdout.queue(Clear(ClearType::Purge));
-        // draw main line
+
+        // draw top line
         world.stdout.queue(cursor::MoveTo(0, world.height - 3));
-        for line_status in &world.main_line {
+        for line_status in &world.top_line {
             match line_status {
                 LineStatus::StoneStart => world.stdout.queue(Print("/")),
                 LineStatus::StoneMiddle => world.stdout.queue(Print("-")),
@@ -167,19 +173,21 @@ fn main() {
                 LineStatus::Line => world.stdout.queue(Print("_")),
             };
         }
-        // draw top ground
-        world.stdout.queue(cursor::MoveTo(0, world.height - 2));
-        for is_grain in &world.top_ground {
-            if *is_grain {
-                world.stdout.queue(Print("."));
-            } else {
-                world.stdout.queue(cursor::MoveRight(1));
-            }
+
+        // draw bottom line
+        world.stdout.queue(cursor::MoveTo(0, world.height - 1));
+        for line_status in &world.bottom_line {
+            match line_status {
+                LineStatus::StoneStart => world.stdout.queue(Print("/")),
+                LineStatus::StoneMiddle => world.stdout.queue(Print("-")),
+                LineStatus::StoneEnd => world.stdout.queue(Print("\\")),
+                LineStatus::Line => world.stdout.queue(Print("_")),
+            };
         }
 
-        // draw bottom ground
-        world.stdout.queue(cursor::MoveTo(0, world.height - 1));
-        for is_grain in &world.bottom_ground {
+        // draw ground
+        world.stdout.queue(cursor::MoveTo(0, world.height - 2));
+        for is_grain in &world.ground {
             if *is_grain {
                 world.stdout.queue(Print("."));
             } else {
@@ -198,35 +206,49 @@ fn main() {
 
     // create next frame
     fn next_frame(world: &mut World) {
-        // generate main line
-        match world.next_stone_distance {
-            2 => world.main_line.push(LineStatus::StoneStart),
-            1 => world.main_line.push(LineStatus::StoneMiddle),
+        // generate top line
+        match world.next_top_stone_distance {
+            2 => world.top_line.push(LineStatus::StoneStart),
+            1 => world.top_line.push(LineStatus::StoneMiddle),
             0 => {
-                world.main_line.push(LineStatus::StoneEnd);
-                world.next_stone_distance = world.rng.gen_range(30..70);
+                world.top_line.push(LineStatus::StoneEnd);
+                world.next_top_stone_distance = world.rng.gen_range(30..70);
             },
-            _ => world.main_line.push(LineStatus::Line),
+            _ => world.top_line.push(LineStatus::Line),
         }
-        world.next_stone_distance -= 1;
-
-        // generate top ground
-        if world.next_top_grain_distance == 0 {
-            world.top_ground.push(true);
-            world.next_top_grain_distance = world.rng.gen_range(10..20);
-        } else {
-            world.top_ground.push(false);
-        }
-        world.next_top_grain_distance -= 1;
+        world.next_top_stone_distance -= 1;
         
-        // generate bottom ground
-        if world.next_bottom_grain_distance == 0 {
-            world.bottom_ground.push(true);
-            world.next_bottom_grain_distance = world.rng.gen_range(10..20);
-        } else {
-            world.bottom_ground.push(false);
+        // generate bottom line
+        match world.next_bottom_stone_distance {
+            2 => world.bottom_line.push(LineStatus::StoneStart),
+            1 => world.bottom_line.push(LineStatus::StoneMiddle),
+            0 => {
+                world.bottom_line.push(LineStatus::StoneEnd);
+                world.next_bottom_stone_distance = world.rng.gen_range(30..70);
+            },
+            _ => world.bottom_line.push(LineStatus::Line),
         }
-        world.next_bottom_grain_distance -= 1;
+        world.next_bottom_stone_distance -= 1;
+
+        // generate ground
+        if world.next_grain_distance == 0 {
+            world.ground.push(true);
+            world.next_grain_distance = world.rng.gen_range(10..20);
+        } else {
+            world.ground.push(false);
+        }
+        world.next_grain_distance -= 1;
+        
+        // generate cactus
+        if world.next_cactus_distance == 0 {
+            let cactus_form = world.rng.gen_range(1..=3);
+            match cactus_form {
+                1 => {
+
+                },
+                _ => {},
+            }
+        }
 
         // move trex
         match world.trex_status {
@@ -269,9 +291,9 @@ fn main() {
     }
 
     fn delete_first_frame(world: &mut World) {
-        world.main_line.remove(0);
-        world.top_ground.remove(0);
-        world.bottom_ground.remove(0);
+        world.top_line.remove(0);
+        world.bottom_line.remove(0);
+        world.ground.remove(0);
     }
 
     fn control_flow(world: &mut World) {
