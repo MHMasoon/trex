@@ -1,3 +1,8 @@
+use crossterm::style;
+use crossterm::style::Color;
+use crossterm::style::ResetColor;
+use crossterm::style::SetBackgroundColor;
+use crossterm::style::SetForegroundColor;
 use crossterm::terminal::size;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
@@ -34,6 +39,8 @@ struct World {
     trex_status: TrexStatus,
     trex_height: u16,
     trex_max_height: u16,
+    trex_color: Color,
+    trex_eye_color: Color,
     game_status: GameStatus,
     stdout: Stdout,
 }
@@ -87,6 +94,8 @@ fn main() {
         trex_height: 0,
         trex_max_height: 10,
         trex_status: TrexStatus::OnGround,
+        trex_color: Color::Cyan,
+        trex_eye_color: Color::Black,
         game_status: GameStatus::Paused,
     };
     
@@ -202,10 +211,15 @@ fn main() {
         }
 
         // draw trex
+        world.stdout.queue(SetBackgroundColor(world.trex_color));
+        world.stdout.queue(SetForegroundColor(world.trex_eye_color));
+
         for trex_pixel in world.trex_pixels.iter() {
             world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1));
-            world.stdout.queue(Print("█"));
+            world.stdout.queue(Print(" "));
         }
+
+        world.stdout.queue(ResetColor);
 
         world.stdout.flush();
     }
@@ -348,6 +362,12 @@ fn main() {
         world.cactuses_pixels.retain(|pixel| pixel.0 > 0);
     }
 
+    fn check_collision(world: &mut World) {
+        if world.cactuses_pixels.iter().any(|pixel| world.trex_pixels.contains(pixel)) {
+            world.game_status = GameStatus::Over;
+        }
+    }
+
     fn control_flow(world: &mut World) {
         initiate_world(world);
         draw(world);
@@ -355,12 +375,14 @@ fn main() {
             check_events(world);
 
             match world.game_status {
-                GameStatus::Paused => continue,
+                GameStatus::Paused | GameStatus::Over => continue,
                 GameStatus::Closed => return,
                 _ => {},
             }
+            
             next_frame(world);
             delete_first_frame(world);
+            check_collision(world);
             draw(world);
             sleep(Duration::from_millis(50));
         }
