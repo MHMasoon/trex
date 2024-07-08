@@ -1,4 +1,3 @@
-use crossterm::style;
 use crossterm::style::Color;
 use crossterm::style::ResetColor;
 use crossterm::style::SetBackgroundColor;
@@ -6,10 +5,12 @@ use crossterm::style::SetForegroundColor;
 use crossterm::terminal::size;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
+use crossterm::terminal::disable_raw_mode;
 use crossterm::terminal::enable_raw_mode;
 use crossterm::style::Print;
 use rand::Rng;
 use rand::rngs::ThreadRng;
+use std::io;
 use std::io::stdout;
 use std::io::Stdout;
 use std::io::Write;
@@ -72,9 +73,9 @@ enum TrexMoveDirection {
     Down,
 }
 
-fn main() {
+fn main() -> io::Result<()> {
     // change terminal settings
-    enable_raw_mode();
+    enable_raw_mode()?;
 
     // create world
     let mut world = World {
@@ -114,12 +115,15 @@ fn main() {
         let trex_x_origin: u16 = 2;
         let trex_y_origin: u16 = world.height - 3;
         world.trex_pixels = [
+            // legs
             (trex_x_origin + 2, trex_y_origin - 0 + 1),
             (trex_x_origin + 0, trex_y_origin - 0 + 1),
+            // body
             (trex_x_origin + 0, trex_y_origin - 1 + 1),
             (trex_x_origin + 1, trex_y_origin - 1 + 1),
             (trex_x_origin + 2, trex_y_origin - 1 + 1),
             (trex_x_origin + 2, trex_y_origin - 2 + 1),
+            // head
             (trex_x_origin + 3, trex_y_origin - 2 + 1),
         ];
     }
@@ -167,61 +171,69 @@ fn main() {
     }
 
     // draw world
-    fn draw(world: &mut World) {
-        world.stdout.queue(cursor::Hide);
-        world.stdout.queue(Clear(ClearType::All));
-        world.stdout.queue(Clear(ClearType::Purge));
+    fn draw(world: &mut World) -> io::Result<()>{
+        world.stdout.queue(cursor::Hide)?;
+        world.stdout.queue(Clear(ClearType::All))?;
+        world.stdout.queue(Clear(ClearType::Purge))?;
 
         // draw top line
-        world.stdout.queue(cursor::MoveTo(0, world.height - 3));
+        world.stdout.queue(cursor::MoveTo(0, world.height - 3))?;
         for line_status in &world.top_line {
             match line_status {
                 LineStatus::StoneStart => world.stdout.queue(Print("/")),
                 LineStatus::StoneMiddle => world.stdout.queue(Print("-")),
                 LineStatus::StoneEnd => world.stdout.queue(Print("\\")),
                 LineStatus::Line => world.stdout.queue(Print("_")),
-            };
+            }?;
         }
 
         // draw bottom line
-        world.stdout.queue(cursor::MoveTo(0, world.height - 1));
+        world.stdout.queue(cursor::MoveTo(0, world.height - 1))?;
         for line_status in &world.bottom_line {
             match line_status {
                 LineStatus::StoneStart => world.stdout.queue(Print("/")),
                 LineStatus::StoneMiddle => world.stdout.queue(Print("-")),
                 LineStatus::StoneEnd => world.stdout.queue(Print("\\")),
                 LineStatus::Line => world.stdout.queue(Print("_")),
-            };
+            }?;
         }
 
         // draw ground
-        world.stdout.queue(cursor::MoveTo(0, world.height - 2));
+        world.stdout.queue(cursor::MoveTo(0, world.height - 2))?;
         for is_grain in &world.ground {
             if *is_grain {
-                world.stdout.queue(Print("."));
+                world.stdout.queue(Print("."))?;
             } else {
-                world.stdout.queue(cursor::MoveRight(1));
+                world.stdout.queue(cursor::MoveRight(1))?;
             }
         }
 
         // draw cactuses
         for pixel in world.cactuses_pixels.iter() {
-            world.stdout.queue(cursor::MoveTo(pixel.0, pixel.1));
-            world.stdout.queue(Print("█"));
+            world.stdout.queue(cursor::MoveTo(pixel.0, pixel.1))?;
+            world.stdout.queue(Print("█"))?;
         }
 
         // draw trex
-        world.stdout.queue(SetBackgroundColor(world.trex_color));
-        world.stdout.queue(SetForegroundColor(world.trex_eye_color));
+        world.stdout.queue(SetForegroundColor(world.trex_color))?;
 
-        for trex_pixel in world.trex_pixels.iter() {
-            world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1));
-            world.stdout.queue(Print(" "));
+        for (index, trex_pixel) in world.trex_pixels.iter().enumerate() {
+            world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1))?;
+            match index {
+                0..=1 => world.stdout.queue(Print("▙")),
+                2..=6 => world.stdout.queue(Print("█")),
+                _ => {
+                    world.stdout.queue(SetBackgroundColor(world.trex_color))?;
+                    world.stdout.queue(SetForegroundColor(world.trex_eye_color))?;
+                    world.stdout.queue(Print("O"))
+                },
+            }?;
         }
 
-        world.stdout.queue(ResetColor);
+        world.stdout.queue(ResetColor)?;
 
-        world.stdout.flush();
+        world.stdout.flush()?;
+        Ok(())
     }
 
     // create next frame
@@ -368,25 +380,41 @@ fn main() {
         }
     }
 
-    fn control_flow(world: &mut World) {
+    fn check_game_status(world: &mut World) {
+        match world.game_status {
+            GameStatus::Over => {
+                world.trex_color = Color::Red;
+            },
+            _ => {}
+        }
+    }
+
+    fn control_flow(world: &mut World) -> io::Result<()> {
         initiate_world(world);
-        draw(world);
+        draw(world)?;
         loop {
             check_events(world);
-
             match world.game_status {
                 GameStatus::Paused | GameStatus::Over => continue,
-                GameStatus::Closed => return,
+                GameStatus::Closed => {
+                    world.stdout.queue(cursor::Show)?;
+                    world.stdout.queue(Clear(ClearType::Purge))?;
+                    world.stdout.queue(Clear(ClearType::All))?;
+                    world.stdout.queue(cursor::MoveTo(0, 0))?;
+                    disable_raw_mode()?;
+                    return Ok(());
+                },
                 _ => {},
-            }
-            
+            };
             next_frame(world);
             delete_first_frame(world);
             check_collision(world);
-            draw(world);
+            check_game_status(world);
+            draw(world)?;
             sleep(Duration::from_millis(50));
         }
     }
 
-    control_flow(&mut world);
+    control_flow(&mut world)?;
+    Ok(())
 }
