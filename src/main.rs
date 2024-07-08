@@ -1,3 +1,5 @@
+use crossterm::event::DisableFocusChange;
+use crossterm::event::EnableFocusChange;
 use crossterm::style::Color;
 use crossterm::style::ResetColor;
 use crossterm::style::SetBackgroundColor;
@@ -8,13 +10,13 @@ use crossterm::terminal::ClearType;
 use crossterm::terminal::disable_raw_mode;
 use crossterm::terminal::enable_raw_mode;
 use crossterm::style::Print;
+use crossterm::ExecutableCommand;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use std::io;
 use std::io::stdout;
 use std::io::Stdout;
 use std::io::Write;
-use std::thread::sleep;
 use std::time::Duration;
 use crossterm::QueueableCommand;
 use crossterm::cursor;
@@ -36,14 +38,19 @@ struct World {
     bottom_line: Vec<LineStatus>,
     ground: Vec<bool>,
     cactuses_pixels: Vec<(u16, u16)>,
-    trex_pixels: [(u16, u16); 7],
-    trex_status: TrexStatus,
-    trex_height: u16,
-    trex_max_height: u16,
-    trex_color: Color,
-    trex_eye_color: Color,
     game_status: GameStatus,
     stdout: Stdout,
+    trex: Trex,
+}
+
+struct Trex {
+    pixels: [(u16, u16); 7],
+    status: TrexStatus,
+    height: u16,
+    max_height: u16,
+    color: Color,
+    eye_color: Color,
+    origin: (u16, u16),
 }
 
 enum GameStatus {
@@ -74,8 +81,16 @@ enum TrexMoveDirection {
 }
 
 fn main() -> io::Result<()> {
-    // change terminal settings
-    enable_raw_mode()?;
+    // create trex
+    let trex = Trex {
+        pixels: [(0, 0); 7],
+        height: 0,
+        max_height: 10,
+        status: TrexStatus::OnGround,
+        color: Color::Cyan,
+        eye_color: Color::Black,
+        origin: (2, size().unwrap().1 - 3),
+    };
 
     // create world
     let mut world = World {
@@ -91,15 +106,14 @@ fn main() -> io::Result<()> {
         bottom_line: Vec::new(),
         ground: Vec::new(),
         cactuses_pixels: Vec::new(),
-        trex_pixels: [(0, 0); 7],
-        trex_height: 0,
-        trex_max_height: 10,
-        trex_status: TrexStatus::OnGround,
-        trex_color: Color::Cyan,
-        trex_eye_color: Color::Black,
         game_status: GameStatus::Paused,
+        trex: trex,
     };
     
+    // change terminal settings
+    enable_raw_mode()?;
+    world.stdout.execute(EnableFocusChange)?;
+
     fn initiate_world(world: &mut World) {
         // TODO: the range's maximum should be equal to terminal width if
         // the width is larger than 2000
@@ -112,32 +126,26 @@ fn main() -> io::Result<()> {
         }
 
         // initiate trex pixels
-        let trex_x_origin: u16 = 2;
-        let trex_y_origin: u16 = world.height - 3;
-        world.trex_pixels = [
+        world.trex.pixels = [
             // legs
-            (trex_x_origin + 2, trex_y_origin - 0 + 1),
-            (trex_x_origin + 0, trex_y_origin - 0 + 1),
-            // body
-            (trex_x_origin + 0, trex_y_origin - 1 + 1),
-            (trex_x_origin + 1, trex_y_origin - 1 + 1),
-            (trex_x_origin + 2, trex_y_origin - 1 + 1),
-            (trex_x_origin + 2, trex_y_origin - 2 + 1),
-            // head
-            (trex_x_origin + 3, trex_y_origin - 2 + 1),
+            (world.trex.origin.0 + 2, world.trex.origin.1 - 0 + 1),
+            (world.trex.origin.0 + 0, world.trex.origin.1 - 0 + 1),
+            // bodyworld.trex.origin.1
+            (world.trex.origin.0 + 0, world.trex.origin.1 - 1 + 1),
+            (world.trex.origin.0 + 1, world.trex.origin.1 - 1 + 1),
+            (world.trex.origin.0 + 2, world.trex.origin.1 - 1 + 1),
+            (world.trex.origin.0 + 2, world.trex.origin.1 - 2 + 1),
+            // headworld.trex.origin.1
+            (world.trex.origin.0 + 3, world.trex.origin.1 - 2 + 1),
         ];
     }
 
     // check events
     fn check_events(world: &mut World) {
         for _ in 0..5 {
-            // `poll()` waits for an `Event` for a given time period
-            if poll(Duration::from_millis(0)).unwrap() {
-                // It's guaranteed that the `read()` won't block when the `poll()`
-                // function returns `true`
+            if poll(Duration::from_millis(10)).unwrap() {
                 match read().unwrap() {
-                    Event::FocusGained => println!("FocusGained"),
-                    Event::FocusLost => println!("FocusLost"),
+                    Event::FocusLost => {world.game_status = GameStatus::Paused;},
                     Event::Key(event) => {
                         match (event.code, event.modifiers) {
                             (KeyCode::Char('p'), KeyModifiers::NONE) => {
@@ -148,8 +156,8 @@ fn main() -> io::Result<()> {
                                 }
                             },
                             (KeyCode::Char(' '), KeyModifiers::NONE) => {
-                                if world.trex_status == TrexStatus::OnGround {
-                                    world.trex_status = TrexStatus::Rising;
+                                if world.trex.status == TrexStatus::OnGround {
+                                    world.trex.status = TrexStatus::Rising;
                                 }
                             },
                             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
@@ -158,14 +166,9 @@ fn main() -> io::Result<()> {
                             _ => {},
                         }
                     },
-                    Event::Mouse(event) => println!("{:?}", event),
-                    #[cfg(feature = "bracketed-paste")]
-                    Event::Paste(data) => println!("Pasted {:?}", data),
                     Event::Resize(width, height) => println!("New size {}x{}", width, height),
-                    _ => println!("Uncovered Event!"),
+                    _ => (),
                 }
-            } else {
-                // Timeout expired and no `Event` is available
             }
         }
     }
@@ -215,16 +218,16 @@ fn main() -> io::Result<()> {
         }
 
         // draw trex
-        world.stdout.queue(SetForegroundColor(world.trex_color))?;
+        world.stdout.queue(SetForegroundColor(world.trex.color))?;
 
-        for (index, trex_pixel) in world.trex_pixels.iter().enumerate() {
+        for (index, trex_pixel) in world.trex.pixels.iter().enumerate() {
             world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1))?;
             match index {
                 0..=1 => world.stdout.queue(Print("▙")),
                 2..=6 => world.stdout.queue(Print("█")),
                 _ => {
-                    world.stdout.queue(SetBackgroundColor(world.trex_color))?;
-                    world.stdout.queue(SetForegroundColor(world.trex_eye_color))?;
+                    world.stdout.queue(SetBackgroundColor(world.trex.color))?;
+                    world.stdout.queue(SetForegroundColor(world.trex.eye_color))?;
                     world.stdout.queue(Print("O"))
                 },
             }?;
@@ -326,19 +329,19 @@ fn main() -> io::Result<()> {
         world.next_cactus_distance -= 1;
 
         // move trex
-        match world.trex_status {
+        match world.trex.status {
             TrexStatus::Rising => {
-                if world.trex_height < world.trex_max_height {
+                if world.trex.height < world.trex.max_height {
                     move_trex(world, TrexMoveDirection::Up);
                 } else {
-                    world.trex_status = TrexStatus::Falling;
+                    world.trex.status = TrexStatus::Falling;
                 }
             },
             TrexStatus::Falling => {
-                if world.trex_height > 0 {
+                if world.trex.height > 0 {
                     move_trex(world, TrexMoveDirection::Down);
                 } else {
-                    world.trex_status = TrexStatus::OnGround;
+                    world.trex.status = TrexStatus::OnGround;
                 }
             },
             _ => {
@@ -348,12 +351,12 @@ fn main() -> io::Result<()> {
     
     fn move_trex(world: &mut World, direction : TrexMoveDirection) {
         if direction  == TrexMoveDirection::Up {
-            world.trex_height += 1;
+            world.trex.height += 1;
         } else {
-            world.trex_height -= 1;
+            world.trex.height -= 1;
         }
 
-        for pixel in world.trex_pixels.iter_mut() {
+        for pixel in world.trex.pixels.iter_mut() {
             match direction {
                 TrexMoveDirection::Up => {
                     pixel.1 -= 1;
@@ -375,7 +378,7 @@ fn main() -> io::Result<()> {
     }
 
     fn check_collision(world: &mut World) {
-        if world.cactuses_pixels.iter().any(|pixel| world.trex_pixels.contains(pixel)) {
+        if world.cactuses_pixels.iter().any(|pixel| world.trex.pixels.contains(pixel)) {
             world.game_status = GameStatus::Over;
         }
     }
@@ -383,7 +386,7 @@ fn main() -> io::Result<()> {
     fn check_game_status(world: &mut World) {
         match world.game_status {
             GameStatus::Over => {
-                world.trex_color = Color::Red;
+                world.trex.color = Color::Red;
             },
             _ => {}
         }
@@ -401,6 +404,7 @@ fn main() -> io::Result<()> {
                     world.stdout.queue(Clear(ClearType::Purge))?;
                     world.stdout.queue(Clear(ClearType::All))?;
                     world.stdout.queue(cursor::MoveTo(0, 0))?;
+                    world.stdout.queue(DisableFocusChange)?;
                     disable_raw_mode()?;
                     return Ok(());
                 },
@@ -411,7 +415,6 @@ fn main() -> io::Result<()> {
             check_collision(world);
             check_game_status(world);
             draw(world)?;
-            sleep(Duration::from_millis(50));
         }
     }
 
