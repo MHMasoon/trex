@@ -1,30 +1,44 @@
-use crossterm::event::DisableFocusChange;
-use crossterm::event::EnableFocusChange;
-use crossterm::style::Color;
-use crossterm::style::ResetColor;
-use crossterm::style::SetBackgroundColor;
-use crossterm::style::SetForegroundColor;
-use crossterm::terminal::size;
-use crossterm::terminal::Clear;
-use crossterm::terminal::ClearType;
-use crossterm::terminal::disable_raw_mode;
-use crossterm::terminal::enable_raw_mode;
-use crossterm::style::Print;
-use crossterm::ExecutableCommand;
-use rand::Rng;
-use rand::rngs::ThreadRng;
-use std::io;
-use std::io::stdout;
-use std::io::Stdout;
-use std::io::Write;
-use std::time::Duration;
-use crossterm::QueueableCommand;
-use crossterm::cursor;
-use crossterm::event::poll;
-use crossterm::event::Event;
-use crossterm::event::read;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyModifiers;
+use crossterm::{
+    cursor,
+    event::{
+        DisableFocusChange,
+        EnableFocusChange,
+        Event,
+        KeyCode,
+        KeyModifiers,
+        poll,
+        read,
+    },
+    ExecutableCommand,
+    style::{
+        Color,
+        Print,
+        ResetColor,
+        SetBackgroundColor,
+        SetForegroundColor,
+    },
+    terminal::{
+        Clear,
+        ClearType,
+        disable_raw_mode, 
+        enable_raw_mode, 
+        size,
+    },
+    QueueableCommand,
+};
+use rand::{
+    Rng,
+    rngs::ThreadRng
+};
+use std::{
+    io::{
+        Result,
+        stdout,
+        Stdout, 
+        Write
+    },
+    time::Duration,
+};
 
 struct World {
     length: u16,
@@ -80,7 +94,7 @@ enum TrexMoveDirection {
     Down,
 }
 
-fn main() -> io::Result<()> {
+fn main() -> Result<()> {
     // create trex
     let trex = Trex {
         pixels: [(0, 0); 7],
@@ -174,7 +188,7 @@ fn main() -> io::Result<()> {
     }
 
     // draw world
-    fn draw(world: &mut World) -> io::Result<()>{
+    fn draw(world: &mut World) -> Result<()>{
         world.stdout.queue(cursor::Hide)?;
         world.stdout.queue(Clear(ClearType::All))?;
         world.stdout.queue(Clear(ClearType::Purge))?;
@@ -392,7 +406,7 @@ fn main() -> io::Result<()> {
         }
     }
 
-    fn control_flow(world: &mut World) -> io::Result<()> {
+    fn control_flow(world: &mut World) -> Result<()> {
         initiate_world(world);
         draw(world)?;
         loop {
