@@ -26,156 +26,137 @@ use crossterm::{
     },
     QueueableCommand,
 };
-use rand::{
-    Rng,
-    rngs::ThreadRng
-};
+use rand::Rng;
 use std::{
     io::{
         Result,
         stdout,
-        Stdout, 
         Write
     },
     time::Duration,
 };
 
-struct World {
-    length: u16,
-    height: u16,
-    next_top_stone_distance: u16,
-    next_bottom_stone_distance: u16,
-    next_grain_distance: u16,
-    next_cactus_distance: u8,
-    rng: ThreadRng,
-    top_line: Vec<LineStatus>,
-    bottom_line: Vec<LineStatus>,
-    ground: Vec<bool>,
-    cactuses_pixels: Vec<(u16, u16)>,
-    game_status: GameStatus,
-    stdout: Stdout,
-    trex: Trex,
-}
-
-struct Trex {
-    pixels: [(u16, u16); 7],
-    status: TrexStatus,
-    height: u16,
-    max_height: u16,
-    color: Color,
-    eye_color: Color,
-    origin: (u16, u16),
-}
-
-enum GameStatus {
-    Paused,
-    Running,
-    Over,
-    Closed,
-}
-
-#[derive(PartialEq)]
-enum TrexStatus {
-    OnGround,
-    Rising,
-    Falling,
-}
-
-enum LineStatus {
-    Line,
-    StoneStart,
-    StoneMiddle,
-    StoneEnd,
-}
-
-#[derive(PartialEq)]
-enum TrexMoveDirection {
-    Up,
-    Down,
-}
+mod game;
+use crate::game::Game;
+use crate::game::world::World;
+use crate::game::world::Screen;
+use crate::game::world::scenery::Scenery;
+use crate::game::world::scenery::Road;
+use crate::game::world::scenery::Clouds;
+use crate::game::world::objects::Objects;
+use crate::game::world::objects::Trex;
+use crate::game::world::objects::TrexStatus;
+use crate::game::world::objects::Cactuses;
+use crate::game::world::Theme;
+use crate::game::Scores;
+use crate::game::GameStatus;
+use crate::game::Utils;
+use crate::game::world::scenery::LineStatus;
+use crate::game::world::objects::TrexMoveDirection;
 
 fn main() -> Result<()> {
-    // create trex
-    let trex = Trex {
-        pixels: [(0, 0); 7],
-        height: 0,
-        max_height: 10,
-        status: TrexStatus::OnGround,
-        color: Color::Cyan,
-        eye_color: Color::Black,
-        origin: (2, size().unwrap().1 - 3),
+    let mut game = Game {
+        world: World {
+            screen: Screen {
+                width: size().unwrap().0,
+                height: size().unwrap().1,
+            },
+            scenery: Scenery {
+                road: Road {
+                    next_top_stone_distance: 0,
+                    next_bottom_stone_distance: 0,
+                    next_grain_distance: 0,
+                    top_line: Vec::new(),
+                    bottom_line: Vec::new(),
+                    ground: Vec::new(), 
+                },
+                clouds: Clouds {},
+            },
+            objects: Objects {
+                trex: Trex {
+                    pixels: [(0,0); 7],
+                    height: 0,
+                    max_height: 10,
+                    status: TrexStatus::OnGround,
+                    origin: (2, size().unwrap().1 - 3),
+                },
+                cactuses: Cactuses {
+                    pixels: Vec::new(),
+                    next_cactus_distance: 0,
+                },
+            },
+            theme: Theme {
+                background: Color::Blue,
+                trex: Color::Green,
+                trex_eye: Color::White,
+                collided_trex: Color::Red,
+                cloud: Color::Cyan,
+                cactus: Color::Green,
+            },
+        },
+        scores: Scores {
+            highest: 0,
+            current: 0,
+        },
+        status: GameStatus::Paused,
+        utils: Utils {
+            rng: rand::thread_rng(),
+            stdout: stdout(),
+        },
     };
 
-    // create world
-    let mut world = World {
-        length: size().unwrap().0,
-        height: size().unwrap().1,
-        rng: rand::thread_rng(),
-        stdout: stdout(),
-        next_top_stone_distance: 0,
-        next_bottom_stone_distance: 0,
-        next_grain_distance: 0,
-        next_cactus_distance: 0,
-        top_line: Vec::new(),
-        bottom_line: Vec::new(),
-        ground: Vec::new(),
-        cactuses_pixels: Vec::new(),
-        game_status: GameStatus::Paused,
-        trex: trex,
-    };
-    
     // change terminal settings
     enable_raw_mode()?;
-    world.stdout.execute(EnableFocusChange)?;
+    game.utils.stdout.execute(EnableFocusChange)?;
 
-    fn initiate_world(world: &mut World) {
+    fn initiate_world(game: &mut Game) {
         // TODO: the range's maximum should be equal to terminal width if
         // the width is larger than 2000
-        world.next_top_stone_distance = world.rng.gen_range(50..100);
-        world.next_bottom_stone_distance = world.rng.gen_range(50..100);
-        world.next_grain_distance = world.rng.gen_range(10..20);
-        world.next_cactus_distance = world.rng.gen_range(100..200);
-        for _ in 0..world.length {
-            next_frame(world);
+        game.world.scenery.road.next_top_stone_distance = game.utils.rng.gen_range(50..100);
+        game.world.scenery.road.next_bottom_stone_distance = game.utils.rng.gen_range(50..100);
+        game.world.scenery.road.next_grain_distance = game.utils.rng.gen_range(10..20);
+        game.world.objects.cactuses.next_cactus_distance = game.utils.rng.gen_range(100..200);
+        for _ in 0..game.world.screen.width {
+            next_frame(game);
         }
 
         // initiate trex pixels
-        world.trex.pixels = [
+        game.world.objects.trex.pixels = [
             // legs
-            (world.trex.origin.0 + 2, world.trex.origin.1 - 0 + 1),
-            (world.trex.origin.0 + 0, world.trex.origin.1 - 0 + 1),
-            // bodyworld.trex.origin.1
-            (world.trex.origin.0 + 0, world.trex.origin.1 - 1 + 1),
-            (world.trex.origin.0 + 1, world.trex.origin.1 - 1 + 1),
-            (world.trex.origin.0 + 2, world.trex.origin.1 - 1 + 1),
-            (world.trex.origin.0 + 2, world.trex.origin.1 - 2 + 1),
-            // headworld.trex.origin.1
-            (world.trex.origin.0 + 3, world.trex.origin.1 - 2 + 1),
+            (game.world.objects.trex.origin.0 + 2, game.world.objects.trex.origin.1 - 0 + 1),
+            (game.world.objects.trex.origin.0 + 0, game.world.objects.trex.origin.1 - 0 + 1),
+            // body
+            (game.world.objects.trex.origin.0 + 0, game.world.objects.trex.origin.1 - 1 + 1),
+            (game.world.objects.trex.origin.0 + 1, game.world.objects.trex.origin.1 - 1 + 1),
+            (game.world.objects.trex.origin.0 + 2, game.world.objects.trex.origin.1 - 1 + 1),
+            (game.world.objects.trex.origin.0 + 2, game.world.objects.trex.origin.1 - 2 + 1),
+            // head
+            (game.world.objects.trex.origin.0 + 3, game.world.objects.trex.origin.1 - 2 + 1),
         ];
     }
 
     // check events
-    fn check_events(world: &mut World) {
+    fn check_events(game: &mut Game) {
         for _ in 0..5 {
             if poll(Duration::from_millis(10)).unwrap() {
                 match read().unwrap() {
-                    Event::FocusLost => {world.game_status = GameStatus::Paused;},
+                    Event::FocusLost => {game.status = GameStatus::Paused;},
                     Event::Key(event) => {
                         match (event.code, event.modifiers) {
                             (KeyCode::Char('p'), KeyModifiers::NONE) => {
-                                match world.game_status {
-                                    GameStatus::Paused => world.game_status = GameStatus::Running,
-                                    GameStatus::Running => world.game_status = GameStatus::Paused,
+                                match game.status {
+                                    GameStatus::Paused => game.status = GameStatus::Running,
+                                    GameStatus::Running => game.status = GameStatus::Paused,
                                     _ => {},
                                 }
                             },
                             (KeyCode::Char(' '), KeyModifiers::NONE) => {
-                                if world.trex.status == TrexStatus::OnGround {
-                                    world.trex.status = TrexStatus::Rising;
+                                if game.world.objects.trex.status == TrexStatus::OnGround {
+                                    game.world.objects.trex.status = TrexStatus::Rising;
                                 }
                             },
                             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                                world.game_status = GameStatus::Closed;
+                                game.status = GameStatus::Closed;
                             }
                             _ => {},
                         }
@@ -188,174 +169,174 @@ fn main() -> Result<()> {
     }
 
     // draw world
-    fn draw(world: &mut World) -> Result<()>{
-        world.stdout.queue(cursor::Hide)?;
-        world.stdout.queue(Clear(ClearType::All))?;
-        world.stdout.queue(Clear(ClearType::Purge))?;
+    fn draw(game: &mut Game) -> Result<()>{
+        game.utils.stdout.queue(cursor::Hide)?;
+        game.utils.stdout.queue(Clear(ClearType::All))?;
+        game.utils.stdout.queue(Clear(ClearType::Purge))?;
 
         // draw top line
-        world.stdout.queue(cursor::MoveTo(0, world.height - 3))?;
-        for line_status in &world.top_line {
+        game.utils.stdout.queue(cursor::MoveTo(0, game.world.screen.height - 3))?;
+        for line_status in &game.world.scenery.road.top_line {
             match line_status {
-                LineStatus::StoneStart => world.stdout.queue(Print("/")),
-                LineStatus::StoneMiddle => world.stdout.queue(Print("-")),
-                LineStatus::StoneEnd => world.stdout.queue(Print("\\")),
-                LineStatus::Line => world.stdout.queue(Print("_")),
+                LineStatus::StoneStart => game.utils.stdout.queue(Print("/")),
+                LineStatus::StoneMiddle => game.utils.stdout.queue(Print("-")),
+                LineStatus::StoneEnd => game.utils.stdout.queue(Print("\\")),
+                LineStatus::Line => game.utils.stdout.queue(Print("_")),
             }?;
         }
 
         // draw bottom line
-        world.stdout.queue(cursor::MoveTo(0, world.height - 1))?;
-        for line_status in &world.bottom_line {
+        game.utils.stdout.queue(cursor::MoveTo(0, game.world.screen.height - 1))?;
+        for line_status in &game.world.scenery.road.bottom_line {
             match line_status {
-                LineStatus::StoneStart => world.stdout.queue(Print("/")),
-                LineStatus::StoneMiddle => world.stdout.queue(Print("-")),
-                LineStatus::StoneEnd => world.stdout.queue(Print("\\")),
-                LineStatus::Line => world.stdout.queue(Print("_")),
+                LineStatus::StoneStart => game.utils.stdout.queue(Print("/")),
+                LineStatus::StoneMiddle => game.utils.stdout.queue(Print("-")),
+                LineStatus::StoneEnd => game.utils.stdout.queue(Print("\\")),
+                LineStatus::Line => game.utils.stdout.queue(Print("_")),
             }?;
         }
 
         // draw ground
-        world.stdout.queue(cursor::MoveTo(0, world.height - 2))?;
-        for is_grain in &world.ground {
+        game.utils.stdout.queue(cursor::MoveTo(0, game.world.screen.height - 2))?;
+        for is_grain in &game.world.scenery.road.ground {
             if *is_grain {
-                world.stdout.queue(Print("."))?;
+                game.utils.stdout.queue(Print("."))?;
             } else {
-                world.stdout.queue(cursor::MoveRight(1))?;
+                game.utils.stdout.queue(cursor::MoveRight(1))?;
             }
         }
 
         // draw cactuses
-        for pixel in world.cactuses_pixels.iter() {
-            world.stdout.queue(cursor::MoveTo(pixel.0, pixel.1))?;
-            world.stdout.queue(Print("█"))?;
+        for pixel in game.world.objects.cactuses.pixels.iter() {
+            game.utils.stdout.queue(cursor::MoveTo(pixel.0, pixel.1))?;
+            game.utils.stdout.queue(Print("█"))?;
         }
 
         // draw trex
-        world.stdout.queue(SetForegroundColor(world.trex.color))?;
+        game.utils.stdout.queue(SetForegroundColor(game.world.theme.trex))?;
 
-        for (index, trex_pixel) in world.trex.pixels.iter().enumerate() {
-            world.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1))?;
+        for (index, trex_pixel) in game.world.objects.trex.pixels.iter().enumerate() {
+            game.utils.stdout.queue(cursor::MoveTo(trex_pixel.0, trex_pixel.1))?;
             match index {
-                0..=1 => world.stdout.queue(Print("▙")),
-                2..=6 => world.stdout.queue(Print("█")),
+                0..=1 => game.utils.stdout.queue(Print("▙")),
+                2..=6 => game.utils.stdout.queue(Print("█")),
                 _ => {
-                    world.stdout.queue(SetBackgroundColor(world.trex.color))?;
-                    world.stdout.queue(SetForegroundColor(world.trex.eye_color))?;
-                    world.stdout.queue(Print("O"))
+                    game.utils.stdout.queue(SetBackgroundColor(game.world.theme.trex))?;
+                    game.utils.stdout.queue(SetForegroundColor(game.world.theme.trex_eye))?;
+                    game.utils.stdout.queue(Print("O"))
                 },
             }?;
         }
 
-        world.stdout.queue(ResetColor)?;
+        game.utils.stdout.queue(ResetColor)?;
 
-        world.stdout.flush()?;
+        game.utils.stdout.flush()?;
         Ok(())
     }
 
     // create next frame
-    fn next_frame(world: &mut World) {
+    fn next_frame(game: &mut Game) {
         // generate top line
-        match world.next_top_stone_distance {
-            2 => world.top_line.push(LineStatus::StoneStart),
-            1 => world.top_line.push(LineStatus::StoneMiddle),
+        match game.world.scenery.road.next_top_stone_distance {
+            2 => game.world.scenery.road.top_line.push(LineStatus::StoneStart),
+            1 => game.world.scenery.road.top_line.push(LineStatus::StoneMiddle),
             0 => {
-                world.top_line.push(LineStatus::StoneEnd);
-                world.next_top_stone_distance = world.rng.gen_range(50..100);
+                game.world.scenery.road.top_line.push(LineStatus::StoneEnd);
+                game.world.scenery.road.next_top_stone_distance = game.utils.rng.gen_range(50..100);
             },
-            _ => world.top_line.push(LineStatus::Line),
+            _ => game.world.scenery.road.top_line.push(LineStatus::Line),
         }
-        world.next_top_stone_distance -= 1;
+        game.world.scenery.road.next_top_stone_distance -= 1;
         
         // generate bottom line
-        match world.next_bottom_stone_distance {
-            2 => world.bottom_line.push(LineStatus::StoneStart),
-            1 => world.bottom_line.push(LineStatus::StoneMiddle),
+        match game.world.scenery.road.next_bottom_stone_distance {
+            2 => game.world.scenery.road.bottom_line.push(LineStatus::StoneStart),
+            1 => game.world.scenery.road.bottom_line.push(LineStatus::StoneMiddle),
             0 => {
-                world.bottom_line.push(LineStatus::StoneEnd);
-                world.next_bottom_stone_distance = world.rng.gen_range(50..100);
+                game.world.scenery.road.bottom_line.push(LineStatus::StoneEnd);
+                game.world.scenery.road.next_bottom_stone_distance = game.utils.rng.gen_range(50..100);
             },
-            _ => world.bottom_line.push(LineStatus::Line),
+            _ => game.world.scenery.road.bottom_line.push(LineStatus::Line),
         }
-        world.next_bottom_stone_distance -= 1;
+        game.world.scenery.road.next_bottom_stone_distance -= 1;
 
         // generate ground
-        if world.next_grain_distance == 0 {
-            world.ground.push(true);
-            world.next_grain_distance = world.rng.gen_range(10..20);
+        if game.world.scenery.road.next_grain_distance == 0 {
+            game.world.scenery.road.ground.push(true);
+            game.world.scenery.road.next_grain_distance = game.utils.rng.gen_range(10..20);
         } else {
-            world.ground.push(false);
+            game.world.scenery.road.ground.push(false);
         }
-        world.next_grain_distance -= 1;
+        game.world.scenery.road.next_grain_distance -= 1;
         
         // move cactuses
-        for pixel in world.cactuses_pixels.iter_mut() {
+        for pixel in game.world.objects.cactuses.pixels.iter_mut() {
             pixel.0 -= 1;
         }
 
         // generate cactus
-        if world.next_cactus_distance == 0 {
-            let cactus_form: u8 = world.rng.gen_range(1..=3);
+        if game.world.objects.cactuses.next_cactus_distance == 0 {
+            let cactus_form: u8 = game.utils.rng.gen_range(1..=3);
             let mut cactus_pixels: Vec<(u16, u16)> = Vec::new();
             match cactus_form {
                 1 => {
                     cactus_pixels = vec![
-                        (world.length + 1, world.height - 2),
-                        (world.length + 1, world.height - 3),
-                        (world.length + 1, world.height - 4),
-                        (world.length + 1, world.height - 5),
-                        (world.length + 2, world.height - 3),
-                        (world.length + 3, world.height - 3),
-                        (world.length + 3, world.height - 4),
+                        (game.world.screen.width + 1, game.world.screen.height - 2),
+                        (game.world.screen.width + 1, game.world.screen.height - 3),
+                        (game.world.screen.width + 1, game.world.screen.height - 4),
+                        (game.world.screen.width + 1, game.world.screen.height - 5),
+                        (game.world.screen.width + 2, game.world.screen.height - 3),
+                        (game.world.screen.width + 3, game.world.screen.height - 3),
+                        (game.world.screen.width + 3, game.world.screen.height - 4),
                     ];
                 },
                 2 => {
                     cactus_pixels = vec![
-                        (world.length + 4, world.height - 2),
-                        (world.length + 4, world.height - 3),
-                        (world.length + 4, world.height - 4),
-                        (world.length + 4, world.height - 5),
-                        (world.length + 3, world.height - 3),
-                        (world.length + 2, world.height - 3),
-                        (world.length + 2, world.height - 4),
+                        (game.world.screen.width + 4, game.world.screen.height - 2),
+                        (game.world.screen.width + 4, game.world.screen.height - 3),
+                        (game.world.screen.width + 4, game.world.screen.height - 4),
+                        (game.world.screen.width + 4, game.world.screen.height - 5),
+                        (game.world.screen.width + 3, game.world.screen.height - 3),
+                        (game.world.screen.width + 2, game.world.screen.height - 3),
+                        (game.world.screen.width + 2, game.world.screen.height - 4),
                     ];
                 },
                 3 => {
                     cactus_pixels = vec![
-                        (world.length + 4, world.height - 2),
-                        (world.length + 4, world.height - 3),
-                        (world.length + 4, world.height - 4),
-                        (world.length + 4, world.height - 5),
-                        (world.length + 3, world.height - 3),
-                        (world.length + 2, world.height - 3),
-                        (world.length + 2, world.height - 4),
-                        (world.length + 5, world.height - 3),
-                        (world.length + 6, world.height - 3),
-                        (world.length + 6, world.height - 4),
+                        (game.world.screen.width + 4, game.world.screen.height - 2),
+                        (game.world.screen.width + 4, game.world.screen.height - 3),
+                        (game.world.screen.width + 4, game.world.screen.height - 4),
+                        (game.world.screen.width + 4, game.world.screen.height - 5),
+                        (game.world.screen.width + 3, game.world.screen.height - 3),
+                        (game.world.screen.width + 2, game.world.screen.height - 3),
+                        (game.world.screen.width + 2, game.world.screen.height - 4),
+                        (game.world.screen.width + 5, game.world.screen.height - 3),
+                        (game.world.screen.width + 6, game.world.screen.height - 3),
+                        (game.world.screen.width + 6, game.world.screen.height - 4),
                     ];
                 },
                 _ => (),
             }
-            world.cactuses_pixels.extend(cactus_pixels);
+            game.world.objects.cactuses.pixels.extend(cactus_pixels);
             
-            world.next_cactus_distance = world.rng.gen_range(100..200);
+            game.world.objects.cactuses.next_cactus_distance = game.utils.rng.gen_range(100..200);
         }
-        world.next_cactus_distance -= 1;
+        game.world.objects.cactuses.next_cactus_distance -= 1;
 
         // move trex
-        match world.trex.status {
+        match game.world.objects.trex.status {
             TrexStatus::Rising => {
-                if world.trex.height < world.trex.max_height {
-                    move_trex(world, TrexMoveDirection::Up);
+                if game.world.objects.trex.height < game.world.objects.trex.max_height {
+                    move_trex(game, TrexMoveDirection::Up);
                 } else {
-                    world.trex.status = TrexStatus::Falling;
+                    game.world.objects.trex.status = TrexStatus::Falling;
                 }
             },
             TrexStatus::Falling => {
-                if world.trex.height > 0 {
-                    move_trex(world, TrexMoveDirection::Down);
+                if game.world.objects.trex.height > 0 {
+                    move_trex(game, TrexMoveDirection::Down);
                 } else {
-                    world.trex.status = TrexStatus::OnGround;
+                    game.world.objects.trex.status = TrexStatus::OnGround;
                 }
             },
             _ => {
@@ -363,14 +344,14 @@ fn main() -> Result<()> {
         }
     }
     
-    fn move_trex(world: &mut World, direction : TrexMoveDirection) {
+    fn move_trex(game: &mut Game, direction : TrexMoveDirection) {
         if direction  == TrexMoveDirection::Up {
-            world.trex.height += 1;
+            game.world.objects.trex.height += 1;
         } else {
-            world.trex.height -= 1;
+            game.world.objects.trex.height -= 1;
         }
 
-        for pixel in world.trex.pixels.iter_mut() {
+        for pixel in game.world.objects.trex.pixels.iter_mut() {
             match direction {
                 TrexMoveDirection::Up => {
                     pixel.1 -= 1;
@@ -382,56 +363,56 @@ fn main() -> Result<()> {
         }
     }
 
-    fn delete_first_frame(world: &mut World) {
-        world.top_line.remove(0);
-        world.bottom_line.remove(0);
-        world.ground.remove(0);
+    fn delete_first_frame(game: &mut Game) {
+        game.world.scenery.road.top_line.remove(0);
+        game.world.scenery.road.bottom_line.remove(0);
+        game.world.scenery.road.ground.remove(0);
 
         // delete cactus pixels that are out of screen
-        world.cactuses_pixels.retain(|pixel| pixel.0 > 0);
+        game.world.objects.cactuses.pixels.retain(|pixel| pixel.0 > 0);
     }
 
-    fn check_collision(world: &mut World) {
-        if world.cactuses_pixels.iter().any(|pixel| world.trex.pixels.contains(pixel)) {
-            world.game_status = GameStatus::Over;
+    fn check_collision(game: &mut Game) {
+        if game.world.objects.cactuses.pixels.iter().any(|pixel| game.world.objects.trex.pixels.contains(pixel)) {
+            game.status = GameStatus::Over;
         }
     }
 
-    fn check_game_status(world: &mut World) {
-        match world.game_status {
+    fn check_game_status(game: &mut Game) {
+        match game.status {
             GameStatus::Over => {
-                world.trex.color = Color::Red;
+                game.world.theme.trex = Color::Red;
             },
             _ => {}
         }
     }
 
-    fn control_flow(world: &mut World) -> Result<()> {
-        initiate_world(world);
-        draw(world)?;
+    fn control_flow(game: &mut Game) -> Result<()> {
+        initiate_world(game);
+        draw(game)?;
         loop {
-            check_events(world);
-            match world.game_status {
+            check_events(game);
+            match game.status {
                 GameStatus::Paused | GameStatus::Over => continue,
                 GameStatus::Closed => {
-                    world.stdout.queue(cursor::Show)?;
-                    world.stdout.queue(Clear(ClearType::Purge))?;
-                    world.stdout.queue(Clear(ClearType::All))?;
-                    world.stdout.queue(cursor::MoveTo(0, 0))?;
-                    world.stdout.queue(DisableFocusChange)?;
+                    game.utils.stdout.queue(cursor::Show)?;
+                    game.utils.stdout.queue(Clear(ClearType::Purge))?;
+                    game.utils.stdout.queue(Clear(ClearType::All))?;
+                    game.utils.stdout.queue(cursor::MoveTo(0, 0))?;
+                    game.utils.stdout.queue(DisableFocusChange)?;
                     disable_raw_mode()?;
                     return Ok(());
                 },
                 _ => {},
             };
-            next_frame(world);
-            delete_first_frame(world);
-            check_collision(world);
-            check_game_status(world);
-            draw(world)?;
+            next_frame(game);
+            delete_first_frame(game);
+            check_collision(game);
+            check_game_status(game);
+            draw(game)?;
         }
     }
 
-    control_flow(&mut world)?;
+    control_flow(&mut game)?;
     Ok(())
 }
