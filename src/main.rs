@@ -116,12 +116,14 @@ fn check_events(game: &mut Game) {
                                     _ => {},
                                 }
                             },
-                            (KeyCode::Char(' '), KeyModifiers::NONE) => {
+                            (KeyCode::Char(' '), KeyModifiers::NONE)
+                            | (KeyCode::Up, KeyModifiers::NONE) => {
                                 if game.world.objects.trex.status == TrexStatus::OnGround {
                                     game.world.objects.trex.status = TrexStatus::Rising;
                                 }
                             },
-                            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                            (KeyCode::Char('c'), KeyModifiers::CONTROL)
+                            | (KeyCode::Char('q'), KeyModifiers::NONE) => {
                                 game.status = GameStatus::Closed;
                             }
                             _ => {},
