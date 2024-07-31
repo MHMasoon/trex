@@ -36,20 +36,19 @@ use std::{
 };
 
 mod game;
-use crate::game::Game;
-use crate::game::world::World;
-use crate::game::world::Screen;
-use crate::game::world::scenery::Scenery;
-use crate::game::world::scenery::Road;
-use crate::game::world::scenery::Clouds;
-use crate::game::world::objects::Objects;
-use crate::game::world::objects::TrexStatus;
-use crate::game::world::objects::Cactuses;
-use crate::game::world::Theme;
-use crate::game::Scores;
-use crate::game::GameStatus;
-use crate::game::Utils;
-use crate::game::world::scenery::LineStatus;
+use crate::game::{
+    Game,
+    GameStatus,
+    Scores,
+    Utils,
+    world::{
+        objects::{Objects, TrexStatus, Cactuses},
+        scenery::{Scenery, Road, Clouds, LineStatus},
+        Screen,
+        Theme,
+        World,
+    }    
+};
 
 fn main() -> Result<()> {
     let mut game = Game {
