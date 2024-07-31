@@ -26,3 +26,22 @@ pub struct Theme {
     pub cloud: Color,
     pub cactus: Color,
 }
+
+impl World {
+    pub fn initiate(&mut self) {
+        for _ in 0..self.screen.width {
+            self.scenery.road.generate_top_line(); 
+            self.scenery.road.generate_bottom_line();
+            self.scenery.road.generate_ground();
+        }
+    }
+
+    pub fn next_frame(&mut self) {
+        self.scenery.road.generate_top_line(); 
+        self.scenery.road.generate_bottom_line();
+        self.scenery.road.generate_ground();
+        self.objects.cactuses.shift();
+        self.objects.cactuses.generate(self.screen.width, self.screen.height);
+        self.objects.trex.check_and_shift();
+    }
+}
