@@ -22,15 +22,15 @@ impl Default for Trex {
             max_height: 10,
             pixels: [
                 // legs
-                (2, screen_height - 1),
-                (0, screen_height - 1),
-                // body
-                (0, screen_height - 2),
-                (1, screen_height - 2),
                 (2, screen_height - 2),
+                (0, screen_height - 2),
+                // body
+                (0, screen_height - 3),
+                (1, screen_height - 3),
                 (2, screen_height - 3),
+                (2, screen_height - 4),
                 // head
-                (3, screen_height - 3),
+                (3, screen_height - 4),
             ],
         }
     }
