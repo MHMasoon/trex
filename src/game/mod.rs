@@ -21,9 +21,22 @@ pub struct Utils {
     pub stdout: Stdout,
 }
 
+#[derive(PartialEq)]
 pub enum GameStatus {
+    Beginning,
     Paused,
     Running,
     Over,
     Closed,
+}
+
+impl GameStatus {
+    pub fn message(&self) -> &str {
+        match self {
+            GameStatus::Beginning => "Press Space to Start!",
+            GameStatus::Paused => "Game is Paused",
+            GameStatus::Over => "Game is Over",
+            _ => "",
+        }
+    }
 }

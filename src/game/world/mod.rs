@@ -25,6 +25,8 @@ pub struct Theme {
     pub trex_eye: Color,
     pub cloud: Color,
     pub cactus: Color,
+    pub message: Color,
+    pub message_background: Color,
 }
 
 impl World {

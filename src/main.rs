@@ -82,13 +82,15 @@ fn main() -> Result<()> {
                 collided_trex: Color::Red,
                 cloud: Color::Cyan,
                 cactus: Color::Green,
+                message: Color::Cyan,
+                message_background: Color::Black,
             },
         },
         scores: Scores {
             highest: 0,
             current: 0,
         },
-        status: GameStatus::Paused,
+        status: GameStatus::Beginning,
         utils: Utils {
             rng: rand::thread_rng(),
             stdout: stdout(),
@@ -103,38 +105,45 @@ fn main() -> Result<()> {
 }
 
 fn check_events(game: &mut Game) {
-        for _ in 0..5 {
-            if poll(Duration::from_millis(10)).unwrap() {
-                match read().unwrap() {
-                    Event::FocusLost => {game.status = GameStatus::Paused;},
-                    Event::Key(event) => {
-                        match (event.code, event.modifiers) {
-                            (KeyCode::Char('p'), KeyModifiers::NONE) => {
-                                match game.status {
-                                    GameStatus::Paused => game.status = GameStatus::Running,
-                                    GameStatus::Running => game.status = GameStatus::Paused,
-                                    _ => {},
-                                }
-                            },
-                            (KeyCode::Char(' '), KeyModifiers::NONE)
-                            | (KeyCode::Up, KeyModifiers::NONE) => {
-                                if game.world.objects.trex.status == TrexStatus::OnGround {
-                                    game.world.objects.trex.status = TrexStatus::Rising;
-                                }
-                            },
-                            (KeyCode::Char('c'), KeyModifiers::CONTROL)
-                            | (KeyCode::Char('q'), KeyModifiers::NONE) => {
-                                game.status = GameStatus::Closed;
+    for _ in 0..5 {
+        if poll(Duration::from_millis(10)).unwrap() {
+            match read().unwrap() {
+                Event::FocusLost => {game.status = GameStatus::Paused;},
+                Event::Key(event) => {
+                    match (event.code, event.modifiers) {
+                        (KeyCode::Char('p'), KeyModifiers::NONE) => {
+                            match game.status {
+                                GameStatus::Paused => game.status = GameStatus::Running,
+                                GameStatus::Running => game.status = GameStatus::Paused,
+                                _ => {},
                             }
-                            _ => {},
+                        },
+                        (KeyCode::Char(' '), KeyModifiers::NONE)
+                        | (KeyCode::Up, KeyModifiers::NONE) => {
+                            match game.status {
+                                GameStatus::Beginning | GameStatus::Paused => {
+                                    game.status = GameStatus::Running;
+                                },
+                                _ => {},
+                            }
+
+                            if game.world.objects.trex.status == TrexStatus::OnGround {
+                                game.world.objects.trex.status = TrexStatus::Rising;
+                            }
+                        },
+                        (KeyCode::Char('c'), KeyModifiers::CONTROL)
+                        | (KeyCode::Char('q'), KeyModifiers::NONE) => {
+                            game.status = GameStatus::Closed;
                         }
-                    },
-                    Event::Resize(width, height) => println!("New size {}x{}", width, height),
-                    _ => (),
-                }
+                        _ => {},
+                    }
+                },
+                Event::Resize(width, height) => println!("New size {}x{}", width, height),
+                _ => (),
             }
         }
     }
+}
 
 fn draw(game: &mut Game) -> Result<()>{
     game.utils.stdout.queue(cursor::Hide)?;
@@ -195,6 +204,23 @@ fn draw(game: &mut Game) -> Result<()>{
         }?;
     }
 
+    // print message
+    game.utils.stdout.queue(SetBackgroundColor(game.world.theme.message_background));
+    game.utils.stdout.queue(SetForegroundColor(game.world.theme.message));
+    match game.status {
+        GameStatus::Beginning | GameStatus::Paused | GameStatus::Over => {
+            let message = game.status.message();
+            game.utils.stdout.queue(
+                cursor::MoveTo(
+                    game.world.screen.width / 2 - message.len() as u16 / 2,
+                    game.world.screen.height / 2
+                )
+            )?;
+            game.utils.stdout.queue(Print(game.status.message()))?;
+        },
+        _ => {},
+    }
+
     game.utils.stdout.queue(ResetColor)?;
 
     game.utils.stdout.flush()?;
@@ -231,7 +257,7 @@ fn control_flow(game: &mut Game) -> Result<()> {
     loop {
         check_events(game);
         match game.status {
-            GameStatus::Paused | GameStatus::Over => continue,
+            GameStatus::Paused | GameStatus::Over | GameStatus::Beginning => continue,
             GameStatus::Closed => {
                 game.utils.stdout.queue(cursor::Show)?;
                 game.utils.stdout.queue(Clear(ClearType::Purge))?;
