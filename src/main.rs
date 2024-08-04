@@ -22,7 +22,6 @@ use crossterm::{
         ClearType,
         disable_raw_mode, 
         enable_raw_mode, 
-        size,
     },
     QueueableCommand,
 };
@@ -42,50 +41,14 @@ use crate::game::{
     Scores,
     Utils,
     world::{
-        objects::{Objects, TrexStatus, Cactuses},
-        scenery::{Scenery, Road, Clouds, LineStatus},
-        Screen,
-        Theme,
-        World,
+        objects::trex::TrexStatus,
+        scenery::LineStatus,
     }    
 };
 
 fn main() -> Result<()> {
     let mut game = Game {
-        world: World {
-            screen: Screen {
-                width: size().unwrap().0,
-                height: size().unwrap().1,
-            },
-            scenery: Scenery {
-                road: Road {
-                    top_stone_distance: 0,
-                    bottom_stone_distance: 0,
-                    grain_distance: 0,
-                    top_line: Vec::new(),
-                    bottom_line: Vec::new(),
-                    ground: Vec::new(), 
-                },
-                clouds: Clouds {},
-            },
-            objects: Objects {
-                trex: Default::default(),
-                cactuses: Cactuses {
-                    pixels: Vec::new(),
-                    cactus_distance: 0,
-                },
-            },
-            theme: Theme {
-                background: Color::Blue,
-                trex: Color::Green,
-                trex_eye: Color::White,
-                collided_trex: Color::Red,
-                cloud: Color::Cyan,
-                cactus: Color::Green,
-                message: Color::Cyan,
-                message_background: Color::Black,
-            },
-        },
+        world: Default::default(),
         scores: Scores {
             highest: 0,
             current: 0,
@@ -124,6 +87,9 @@ fn check_events(game: &mut Game) {
                                 GameStatus::Beginning | GameStatus::Paused => {
                                     game.status = GameStatus::Running;
                                 },
+                                GameStatus::Over => {
+                                    restart(game);
+                                }
                                 _ => {},
                             }
 
@@ -205,8 +171,8 @@ fn draw(game: &mut Game) -> Result<()>{
     }
 
     // print message
-    game.utils.stdout.queue(SetBackgroundColor(game.world.theme.message_background));
-    game.utils.stdout.queue(SetForegroundColor(game.world.theme.message));
+    game.utils.stdout.queue(SetBackgroundColor(game.world.theme.message_background))?;
+    game.utils.stdout.queue(SetForegroundColor(game.world.theme.message))?;
     match game.status {
         GameStatus::Beginning | GameStatus::Paused | GameStatus::Over => {
             let message = game.status.message();
@@ -249,6 +215,13 @@ fn check_game_status(game: &mut Game) {
         },
         _ => {}
     }
+}
+
+fn restart(game: &mut Game) -> Result<()> {
+    game.status = GameStatus::Beginning;
+    game.world.reset();
+    game.world.initiate();
+    draw(game)
 }
 
 fn control_flow(game: &mut Game) -> Result<()> {

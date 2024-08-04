@@ -1,32 +1,21 @@
-use crossterm::style::Color;
-
 pub mod scenery;
 use scenery::Scenery;
 
 pub mod objects;
 use objects::Objects;
 
+pub mod theme;
+pub use theme::Theme;
+
+pub mod screen;
+pub use screen::Screen;
+
+#[derive(Default)]
 pub struct World {
     pub screen: Screen,
     pub scenery: Scenery,
     pub objects: Objects,
     pub theme: Theme,
-}
-
-pub struct Screen {
-    pub width: u16,
-    pub height: u16,
-}
-
-pub struct Theme {
-    pub background: Color,
-    pub trex: Color,
-    pub collided_trex: Color,
-    pub trex_eye: Color,
-    pub cloud: Color,
-    pub cactus: Color,
-    pub message: Color,
-    pub message_background: Color,
 }
 
 impl World {
@@ -45,5 +34,9 @@ impl World {
         self.objects.cactuses.shift();
         self.objects.cactuses.generate(self.screen.width, self.screen.height);
         self.objects.trex.check_and_shift();
+    }
+
+    pub fn reset(&mut self) {
+        *self = Default::default();
     }
 }

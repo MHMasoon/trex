@@ -1,10 +1,12 @@
 use rand::Rng;
 
+#[derive(Default)]
 pub struct Scenery {
     pub road: Road,
     pub clouds: Clouds,
 }
 
+#[derive(Default)]
 pub struct Road {
     pub top_stone_distance: u16,
     pub bottom_stone_distance: u16,
@@ -14,9 +16,9 @@ pub struct Road {
     pub ground: Vec<bool>,
 }
 
-pub struct Clouds {
+#[derive(Default)]
+pub struct Clouds {}
 
-}
 
 pub enum LineStatus {
     Line,
