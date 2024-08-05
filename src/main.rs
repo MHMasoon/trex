@@ -189,6 +189,14 @@ fn draw(game: &mut Game) -> Result<()>{
 
     game.utils.stdout.queue(ResetColor)?;
 
+    // print scores
+    game.utils.stdout.queue(
+        cursor::MoveTo(game.world.screen.width - 30, game.world.screen.height - 20)
+    )?;
+    game.utils.stdout.queue(
+        Print(format!("Score: {} Highest: {}", game.scores.current, game.scores.highest))
+    )?;
+
     game.utils.stdout.flush()?;
     Ok(())
 }
@@ -221,6 +229,7 @@ fn restart(game: &mut Game) -> Result<()> {
     game.status = GameStatus::Beginning;
     game.world.reset();
     game.world.initiate();
+    game.scores.current = 0;
     draw(game)
 }
 
@@ -243,6 +252,10 @@ fn control_flow(game: &mut Game) -> Result<()> {
             _ => {},
         };
         game.world.next_frame();
+        game.scores.current += 1;
+        if game.scores.current > game.scores.highest {
+            game.scores.highest = game.scores.current;
+        }
         delete_first_frame(game);
         check_collision(game);
         check_game_status(game);
