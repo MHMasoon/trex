@@ -69,7 +69,7 @@ fn main() -> Result<()> {
 
 fn check_events(game: &mut Game) {
     for _ in 0..5 {
-        if poll(Duration::from_millis(10)).unwrap() {
+        if poll(Duration::from_micros((10000 - game.scores.current * 5) as u64)).unwrap() {
             match read().unwrap() {
                 Event::FocusLost => {game.status = GameStatus::Paused;},
                 Event::Key(event) => {
